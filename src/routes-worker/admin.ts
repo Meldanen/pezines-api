@@ -1,0 +1,30 @@
+import { Hono } from 'hono';
+import type { Env } from '../config.worker.js';
+import { refreshCacheKV } from '../services/cache.kv.js';
+
+const admin = new Hono<{ Bindings: Env }>();
+
+// POST /api/v1/admin/refresh
+admin.post('/api/v1/admin/refresh', async (c) => {
+  const apiKey = c.req.header('x-api-key');
+
+  if (apiKey !== c.env.ADMIN_API_KEY) {
+    return c.json({ error: 'Invalid API key' }, 401);
+  }
+
+  try {
+    const data = await refreshCacheKV(c.env);
+    return c.json({
+      message: 'Cache refreshed successfully',
+      stationCount: data.stations.length,
+      scrapedAt: data.scrapedAt,
+    });
+  } catch (err) {
+    return c.json({
+      error: 'Refresh failed',
+      message: (err as Error).message,
+    }, 500);
+  }
+});
+
+export { admin };

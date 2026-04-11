@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { scrapeAll } from './scraper.service.js';
+import { getSession, refreshSession } from './session-manager.service.js';
 import type { CacheData, Station } from '../models/types.js';
 
 const CACHE_FILE = path.resolve('data', 'cache.json');
@@ -53,7 +54,11 @@ export async function refreshCache(): Promise<CacheData> {
 
   refreshing = true;
   try {
-    const stations = await scrapeAll();
+    const stations = await scrapeAll({
+      getSession,
+      refreshSession,
+      govUrl: config.GOV_URL,
+    });
     const meta = extractMeta(stations);
     cache = {
       stations,

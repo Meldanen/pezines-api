@@ -1,18 +1,22 @@
 import axios from 'axios';
-import { createHash } from 'node:crypto';
-import { config } from '../config.js';
-import { getSession, refreshSession } from './session-manager.service.js';
 import { parseStationsHtml } from './html-parser.service.js';
 import { FUEL_TYPE_MAP } from '../utils/constants.js';
-import type { Station, RawStation, ScrapeResult } from '../models/types.js';
+import type { Station, ScrapeResult, SessionTokens } from '../models/types.js';
 
-function generateStationId(brand: string, name: string, lat: number, lng: number): string {
+async function generateStationId(brand: string, name: string, lat: number, lng: number): Promise<string> {
   const input = `${brand}|${name}|${lat}|${lng}`;
-  return createHash('sha256').update(input).digest('hex').slice(0, 12);
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
 }
 
-async function scrapeFuelType(fuelTypeId: number): Promise<ScrapeResult> {
-  let session = await getSession();
+export interface ScrapeOptions {
+  getSession: () => Promise<SessionTokens>;
+  refreshSession: () => Promise<SessionTokens>;
+  govUrl: string;
+}
+
+async function scrapeFuelType(fuelTypeId: number, opts: ScrapeOptions): Promise<ScrapeResult> {
+  let session = await opts.getSession();
 
   const formData = new URLSearchParams();
   formData.append('Entity.PetroleumType', String(fuelTypeId));
@@ -21,7 +25,7 @@ async function scrapeFuelType(fuelTypeId: number): Promise<ScrapeResult> {
 
   let response;
   try {
-    response = await axios.post(config.GOV_URL, formData.toString(), {
+    response = await axios.post(opts.govUrl, formData.toString(), {
       headers: {
         Cookie: session.cookies,
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -32,9 +36,9 @@ async function scrapeFuelType(fuelTypeId: number): Promise<ScrapeResult> {
   } catch (err: any) {
     if (err.response?.status === 403 || err.response?.status === 302) {
       // Session expired, refresh and retry once
-      session = await refreshSession();
+      session = await opts.refreshSession();
       formData.set('__RequestVerificationToken', session.verificationToken);
-      response = await axios.post(config.GOV_URL, formData.toString(), {
+      response = await axios.post(opts.govUrl, formData.toString(), {
         headers: {
           Cookie: session.cookies,
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -55,12 +59,12 @@ async function scrapeFuelType(fuelTypeId: number): Promise<ScrapeResult> {
   };
 }
 
-function mergeResults(results: ScrapeResult[]): Station[] {
+async function mergeResults(results: ScrapeResult[]): Promise<Station[]> {
   const stationMap = new Map<string, Station>();
 
   for (const result of results) {
     for (const raw of result.stations) {
-      const id = generateStationId(
+      const id = await generateStationId(
         raw.brand,
         raw.name,
         raw.location.coordinates.latitude,
@@ -89,13 +93,13 @@ function mergeResults(results: ScrapeResult[]): Station[] {
   return Array.from(stationMap.values());
 }
 
-export async function scrapeAll(): Promise<Station[]> {
+export async function scrapeAll(opts: ScrapeOptions): Promise<Station[]> {
   console.log('[scraper] Starting full scrape of all fuel types...');
   const results: ScrapeResult[] = [];
 
   for (let id = 1; id <= 5; id++) {
     try {
-      const result = await scrapeFuelType(id);
+      const result = await scrapeFuelType(id, opts);
       results.push(result);
       console.log(`[scraper] Fuel type ${FUEL_TYPE_MAP[id]}: ${result.stations.length} stations`);
     } catch (err) {
@@ -103,7 +107,7 @@ export async function scrapeAll(): Promise<Station[]> {
     }
   }
 
-  const stations = mergeResults(results);
+  const stations = await mergeResults(results);
   console.log(`[scraper] Merged into ${stations.length} unique stations`);
   return stations;
 }

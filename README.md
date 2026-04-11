@@ -2,6 +2,10 @@
 
 REST API that scrapes petroleum prices from the Cyprus government site and serves them via cached endpoints.
 
+Two deployment targets from shared core logic:
+- **Fastify** — local dev, Docker, any VPS
+- **Cloudflare Workers** — edge deployment with KV storage
+
 ## Quick Start
 
 ```bash
@@ -11,6 +15,35 @@ npm run dev
 
 Server starts on `http://localhost:3000`.
 
+## Cloudflare Workers
+
+```bash
+# Local dev (uses Wrangler local mode)
+npm run dev:worker
+
+# Deploy to Cloudflare
+npm run deploy
+```
+
+### First-time setup
+
+1. Create a KV namespace:
+   ```bash
+   npx wrangler kv namespace create KV
+   npx wrangler kv namespace create KV --preview
+   ```
+2. Update `wrangler.toml` with the returned namespace IDs
+3. Set the admin secret:
+   ```bash
+   npx wrangler secret put ADMIN_API_KEY
+   ```
+
+The Worker uses a cron trigger (every 4 hours) to refresh the cache. On first deploy, trigger a manual refresh:
+
+```bash
+curl -X POST https://your-worker.workers.dev/api/v1/admin/refresh -H "x-api-key: YOUR_KEY"
+```
+
 ## Docker
 
 ```bash
@@ -19,6 +52,8 @@ docker run -p 3000:3000 -e ADMIN_API_KEY=yoursecret pezines
 ```
 
 ## API Endpoints
+
+All endpoints are identical on both runtimes.
 
 | Endpoint | Description |
 |---|---|
@@ -49,10 +84,32 @@ curl "http://localhost:3000/api/v1/prices/summary"
 
 1. **Session manager** fetches CSRF tokens from the gov site (ASP.NET form tokens + cookies)
 2. **Scraper** POSTs for each fuel type (Unleaded 95, 98, Diesel, Heating Oil, Kerosene) and parses the HTML response
-3. **Cache** merges results into unified station objects, stored in-memory with file backup
+3. **Cache** merges results into unified station objects
+   - Fastify: in-memory with file backup, `setInterval` auto-refresh
+   - Workers: Cloudflare KV storage, cron-triggered refresh
 4. Data auto-refreshes every 4 hours; sessions refresh every 30 minutes
 
+## Architecture
+
+```
+src/
+  server.ts / app.ts          Fastify entry + app
+  worker.ts / worker-app.ts   Workers entry + Hono app
+  services/
+    scraper.service.ts         Shared (Web Crypto, injectable session)
+    html-parser.service.ts     Shared (isomorphic)
+    geo.service.ts             Shared (pure math)
+    cache.service.ts           Fastify (fs-backed)
+    session-manager.service.ts Fastify (axios + setInterval)
+    cache.kv.ts                Workers (KV-backed)
+    session-manager.kv.ts      Workers (KV-backed, fetch API)
+  routes/                      Fastify route handlers
+  routes-worker/               Hono route handlers
+```
+
 ## Environment Variables
+
+### Fastify
 
 | Variable | Default | Description |
 |---|---|---|
@@ -63,6 +120,16 @@ curl "http://localhost:3000/api/v1/prices/summary"
 | `SCRAPE_INTERVAL_MS` | `14400000` | Auto-refresh interval (4 hours) |
 | `SESSION_REFRESH_MS` | `1800000` | Session token refresh (30 min) |
 
+### Workers
+
+Configured in `wrangler.toml` (vars) and via `wrangler secret put` (secrets):
+
+| Binding | Type | Description |
+|---|---|---|
+| `KV` | KV Namespace | Cache + session storage |
+| `GOV_URL` | var | Government scrape URL |
+| `ADMIN_API_KEY` | secret | API key for admin endpoints |
+
 ## Tech Stack
 
-TypeScript, Fastify 5, axios, cheerio, envalid
+TypeScript, Fastify 5, Hono, axios, cheerio, envalid, Cloudflare Workers + KV
