@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:eforms.eservices.cyprus.gov.cy)",
+      "Bash(timeout 30 bash:*)",
+      "Bash(cd /c/dev/cheapriot && git init && git add -A && git commit -m \"Initial cheapriot scaffold\" 2>&1)",
+      "Bash(cd /c/dev/cheapriot && npx tsc --noEmit 2>&1)"
+    ]
+  }
+}
