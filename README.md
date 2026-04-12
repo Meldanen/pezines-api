@@ -6,14 +6,27 @@ Two deployment targets from shared core logic:
 - **Fastify** — local dev, Docker, any VPS
 - **Cloudflare Workers** — edge deployment with KV storage
 
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 20+
+- npm (comes with Node)
+- (Optional) [Docker](https://www.docker.com/) for containerized deployment
+- (Optional) [Cloudflare account](https://dash.cloudflare.com/sign-up) for Workers deployment
+
 ## Quick Start
 
 ```bash
+# Install dependencies
 npm install
+
+# Copy env file and edit as needed
+cp .env.example .env
+
+# Start dev server
 npm run dev
 ```
 
-Server starts on `http://localhost:3000`.
+Server starts on `http://localhost:3000`. The first run scrapes the Cyprus gov site and caches the data — this takes ~30 seconds.
 
 ## Cloudflare Workers
 
@@ -38,7 +51,7 @@ npm run deploy
    npx wrangler secret put ADMIN_API_KEY
    ```
 
-The Worker uses a cron trigger (every 4 hours) to refresh the cache. On first deploy, trigger a manual refresh:
+The Worker uses a cron trigger (every 6 hours) to refresh the cache. On first deploy, trigger a manual refresh:
 
 ```bash
 curl -X POST https://your-worker.workers.dev/api/v1/admin/refresh -H "x-api-key: YOUR_KEY"
@@ -87,7 +100,7 @@ curl "http://localhost:3000/api/v1/prices/summary"
 3. **Cache** merges results into unified station objects
    - Fastify: in-memory with file backup, `setInterval` auto-refresh
    - Workers: Cloudflare KV storage, cron-triggered refresh
-4. Data auto-refreshes every 4 hours; sessions refresh every 30 minutes
+4. Data auto-refreshes every 6 hours; sessions refresh every 30 minutes
 
 ## Architecture
 
@@ -129,6 +142,10 @@ Configured in `wrangler.toml` (vars) and via `wrangler secret put` (secrets):
 | `KV` | KV Namespace | Cache + session storage |
 | `GOV_URL` | var | Government scrape URL |
 | `ADMIN_API_KEY` | secret | API key for admin endpoints |
+
+## CI/CD
+
+Pushing to `master` auto-deploys to Cloudflare Workers via GitHub Actions. Requires a `CLOUDFLARE_API_TOKEN` secret in the repo settings.
 
 ## Tech Stack
 

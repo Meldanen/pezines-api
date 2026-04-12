@@ -11,8 +11,8 @@ GOV_URL = "https://eforms.eservices.cyprus.gov.cy/MCIT/MCIT/PetroleumPrices"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+id = "b759dff84b084bcfbc8c52030e12ea5f"
+preview_id = "51ce2b95145f4e73a392fadc2b010d89"
 
 [triggers]
-crons = ["0 */4 * * *"]
+crons = ["0 */6 * * *"]
