@@ -1,5 +1,5 @@
 {
-  "name": "pezines",
+  "name": "pezines-api",
   "version": "1.0.0",
   "description": "Cyprus Gas Prices REST API",
   "type": "module",
