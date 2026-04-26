@@ -77,6 +77,9 @@ All endpoints are identical on both runtimes.
 | `GET /api/v1/prices/summary` | Avg/min/max per fuel type and district |
 | `GET /api/v1/meta/fuel-types` | Available fuel types |
 | `GET /api/v1/meta/districts` | Available districts |
+| `GET /api/v1/history/station/:stationId` | Price history for a station (`fuelType`, `from`, `to`, `limit`) |
+| `GET /api/v1/history/average` | Avg/min/max price history across all stations (`fuelType`, `from`, `to`, `limit`) |
+| `GET /api/v1/history/snapshots` | List of distinct snapshot timestamps (`limit`) |
 | `GET /api/v1/health` | Server health + cache status |
 | `POST /api/v1/admin/refresh` | Force re-scrape (requires `x-api-key` header) |
 
@@ -91,6 +94,12 @@ curl "http://localhost:3000/api/v1/prices/cheapest?fuelType=95&limit=5"
 
 # Price summary
 curl "http://localhost:3000/api/v1/prices/summary"
+
+# Station price history (last 30 days, Unleaded 95)
+curl "http://localhost:3000/api/v1/history/station/123?fuelType=95&from=2026-03-27&to=2026-04-26"
+
+# Average price history
+curl "http://localhost:3000/api/v1/history/average?fuelType=95&limit=30"
 ```
 
 ## How It Works
@@ -101,6 +110,7 @@ curl "http://localhost:3000/api/v1/prices/summary"
    - Fastify: in-memory with file backup, `setInterval` auto-refresh
    - Workers: Cloudflare KV storage, cron-triggered refresh
 4. Data auto-refreshes every 6 hours; sessions refresh every 30 minutes
+5. **History** — on each cron refresh (Workers), a snapshot of all prices is saved to D1 for historical tracking
 
 ## Architecture
 
@@ -116,6 +126,7 @@ src/
     session-manager.service.ts Fastify (axios + setInterval)
     cache.kv.ts                Workers (KV-backed)
     session-manager.kv.ts      Workers (KV-backed, fetch API)
+    history.d1.ts              Workers (D1-backed history queries)
   routes/                      Fastify route handlers
   routes-worker/               Hono route handlers
 ```
@@ -140,6 +151,7 @@ Configured in `wrangler.toml` (vars) and via `wrangler secret put` (secrets):
 | Binding | Type | Description |
 |---|---|---|
 | `KV` | KV Namespace | Cache + session storage |
+| `DB` | D1 Database | Historical price snapshots |
 | `GOV_URL` | var | Government scrape URL |
 | `ADMIN_API_KEY` | secret | API key for admin endpoints |
 
@@ -149,4 +161,4 @@ Pushing to `master` auto-deploys to Cloudflare Workers via GitHub Actions. Requi
 
 ## Tech Stack
 
-TypeScript, Fastify 5, Hono, axios, cheerio, envalid, Cloudflare Workers + KV
+TypeScript, Fastify 5, Hono, axios, cheerio, envalid, Cloudflare Workers + KV + D1
