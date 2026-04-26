@@ -6,6 +6,7 @@ import { prices } from './routes-worker/prices.js';
 import { meta } from './routes-worker/meta.js';
 import { health } from './routes-worker/health.js';
 import { admin } from './routes-worker/admin.js';
+import { history } from './routes-worker/history.js';
 
 export function buildWorkerApp() {
   const app = new Hono<{ Bindings: Env }>();
@@ -19,6 +20,7 @@ export function buildWorkerApp() {
   app.route('/', meta);
   app.route('/', health);
   app.route('/', admin);
+  app.route('/', history);
 
   // 404
   app.notFound((c) =>
