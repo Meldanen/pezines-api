@@ -155,6 +155,28 @@ Configured in `wrangler.toml` (vars) and via `wrangler secret put` (secrets):
 | `GOV_URL` | var | Government scrape URL |
 | `ADMIN_API_KEY` | secret | API key for admin endpoints |
 
+## Viewing the Database
+
+The D1 database (`pezines-history`) stores historical price snapshots. You can query it via the Wrangler CLI or the Cloudflare dashboard.
+
+```bash
+# Row count
+npx wrangler d1 execute pezines-history --remote --command "SELECT COUNT(*) FROM price_history;"
+
+# Latest records
+npx wrangler d1 execute pezines-history --remote --command "SELECT * FROM price_history ORDER BY recorded_at DESC LIMIT 10;"
+
+# Distinct fuel types
+npx wrangler d1 execute pezines-history --remote --command "SELECT DISTINCT fuel_type FROM price_history;"
+
+# All data (careful if large)
+npx wrangler d1 execute pezines-history --remote --command "SELECT * FROM price_history LIMIT 100;"
+```
+
+Replace `--remote` with `--local` to query the local dev database instead.
+
+You can also browse the data in the Cloudflare dashboard under **Workers & Pages > D1 > pezines-history**, which has a built-in SQL console.
+
 ## CI/CD
 
 Pushing to `master` auto-deploys to Cloudflare Workers via GitHub Actions. Requires a `CLOUDFLARE_API_TOKEN` secret in the repo settings.
