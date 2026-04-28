@@ -21,3 +21,11 @@ database_id = "166ce578-4d71-41b8-af33-3c6939998429"
 
 [triggers]
 crons = ["0 */12 * * *"]
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
