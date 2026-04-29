@@ -51,6 +51,19 @@ async function scrapeFuelType(fuelTypeId: number, opts: ScrapeOptions): Promise<
     }
   }
 
+  // Probe for gov-side update signals — runs once per fuel type, log only for the first.
+  if (fuelTypeId === 1) {
+    console.log('[probe] last-modified:', response.headers['last-modified'] ?? '(none)');
+    console.log('[probe] date:', response.headers['date'] ?? '(none)');
+    const html: string = response.data;
+    for (const needle of ['ισχύουν', 'Ισχύουν', 'ενημερ', 'Ενημερ', 'ημερομην', 'Ημερομην']) {
+      const i = html.indexOf(needle);
+      if (i !== -1) {
+        console.log(`[probe] "${needle}" @${i}:`, html.slice(Math.max(0, i - 40), i + 120).replace(/\s+/g, ' '));
+      }
+    }
+  }
+
   const stations = parseStationsHtml(response.data);
   return {
     fuelType: FUEL_TYPE_MAP[fuelTypeId] ?? `Unknown (${fuelTypeId})`,
