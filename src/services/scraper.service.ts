@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { parseStationsHtml } from './html-parser.service.js';
 import { FUEL_TYPE_MAP } from '../utils/constants.js';
 import type { Station, ScrapeResult, SessionTokens } from '../models/types.js';
@@ -51,17 +52,28 @@ async function scrapeFuelType(fuelTypeId: number, opts: ScrapeOptions): Promise<
     }
   }
 
-  // Probe for gov-side update signals — runs once per fuel type, log only for the first.
+  // Probe for gov-side update signals — runs once per scrape.
   if (fuelTypeId === 1) {
-    console.log('[probe] last-modified:', response.headers['last-modified'] ?? '(none)');
-    console.log('[probe] date:', response.headers['date'] ?? '(none)');
     const html: string = response.data;
-    for (const needle of ['ισχύουν', 'Ισχύουν', 'ενημερ', 'Ενημερ', 'ημερομην', 'Ημερομην']) {
-      const i = html.indexOf(needle);
-      if (i !== -1) {
-        console.log(`[probe] "${needle}" @${i}:`, html.slice(Math.max(0, i - 40), i + 120).replace(/\s+/g, ' '));
-      }
+
+    // Find all DD/MM/YYYY style dates and log surrounding context — gives us the page's notion of "when".
+    const dateRegex = /\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}/g;
+    const seen = new Set<string>();
+    let m: RegExpExecArray | null;
+    while ((m = dateRegex.exec(html)) !== null && seen.size < 8) {
+      if (seen.has(m[0])) continue;
+      seen.add(m[0]);
+      const ctx = html.slice(Math.max(0, m.index - 60), m.index + 60).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log(`[probe] date "${m[0]}":`, ctx);
     }
+
+    // Dump <title> + any <h1>/<h2> + first non-empty heading-ish text so we can see what header metadata the page exposes.
+    const $ = cheerio.load(html);
+    console.log('[probe] <title>:', $('title').first().text().trim());
+    $('h1, h2, h3, .panel-heading, legend').slice(0, 8).each((_, el) => {
+      const t = $(el).text().replace(/\s+/g, ' ').trim();
+      if (t) console.log(`[probe] <${(el as any).tagName}>:`, t);
+    });
   }
 
   const stations = parseStationsHtml(response.data);
