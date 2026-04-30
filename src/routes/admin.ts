@@ -1,23 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { refreshCache } from '../services/cache.service.js';
+import { checkBasicAuth } from '../utils/auth.js';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/admin/refresh
   app.post('/api/v1/admin/refresh', {
-    schema: {
-      headers: {
-        type: 'object',
-        required: ['x-api-key'],
-        properties: {
-          'x-api-key': { type: 'string' },
-        },
-      },
-    },
     handler: async (request, reply) => {
       const apiKey = (request.headers as Record<string, string>)['x-api-key'];
+      const dashPw = config.DASHBOARD_PASSWORD;
+      const authed =
+        apiKey === config.ADMIN_API_KEY ||
+        (!!dashPw && checkBasicAuth(request.headers.authorization, dashPw));
 
-      if (apiKey !== config.ADMIN_API_KEY) {
+      if (!authed) {
         return reply.status(401).send({ error: 'Invalid API key' });
       }
 

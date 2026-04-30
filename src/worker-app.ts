@@ -7,12 +7,27 @@ import { meta } from './routes-worker/meta.js';
 import { health } from './routes-worker/health.js';
 import { admin } from './routes-worker/admin.js';
 import { history } from './routes-worker/history.js';
+import { DASHBOARD_HTML } from './ui/dashboard.js';
+import { checkBasicAuth } from './utils/auth.js';
 
 export function buildWorkerApp() {
   const app = new Hono<{ Bindings: Env }>();
 
   // CORS
   app.use('*', cors());
+
+  // Dashboard. Disabled (404) unless DASHBOARD_PASSWORD is set; otherwise basic-auth gated.
+  app.get('/', (c) => {
+    const pw = c.env.DASHBOARD_PASSWORD;
+    if (!pw) return c.notFound();
+    if (!checkBasicAuth(c.req.header('Authorization'), pw)) {
+      return new Response('Authentication required', {
+        status: 401,
+        headers: { 'WWW-Authenticate': 'Basic realm="pezines"' },
+      });
+    }
+    return c.html(DASHBOARD_HTML);
+  });
 
   // Tell the mobile app's HTTP layer not to silently cache — clients should manage caching deliberately.
   app.use('/api/v1/*', async (c, next) => {

@@ -9,6 +9,9 @@ import { priceRoutes } from './routes/prices.js';
 import { metaRoutes } from './routes/meta.js';
 import { healthRoutes } from './routes/health.js';
 import { adminRoutes } from './routes/admin.js';
+import { DASHBOARD_HTML } from './ui/dashboard.js';
+import { checkBasicAuth } from './utils/auth.js';
+import { config } from './config.js';
 
 export async function buildApp() {
   const isProd = process.env.NODE_ENV === 'production';
@@ -38,6 +41,20 @@ export async function buildApp() {
   await app.register(metaRoutes);
   await app.register(healthRoutes);
   await app.register(adminRoutes);
+
+  // Dashboard. Disabled (404) unless DASHBOARD_PASSWORD is set; otherwise basic-auth gated.
+  // compress: false — fastify/compress mis-encodes static HTML strings.
+  app.get('/', { compress: false } as never, async (req, reply) => {
+    const pw = config.DASHBOARD_PASSWORD;
+    if (!pw) return reply.callNotFound();
+    if (!checkBasicAuth(req.headers.authorization, pw)) {
+      return reply
+        .code(401)
+        .header('WWW-Authenticate', 'Basic realm="pezines"')
+        .send('Authentication required');
+    }
+    reply.type('text/html; charset=utf-8').send(DASHBOARD_HTML);
+  });
 
   return app;
 }

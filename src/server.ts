@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { config } from './config.js';
 import { buildApp } from './app.js';
 import { initCache, startAutoRefresh } from './services/cache.service.js';

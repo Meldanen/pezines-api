@@ -8,6 +8,7 @@ GOV_URL = "https://eforms.eservices.cyprus.gov.cy/MCIT/MCIT/PetroleumPrices"
 
 # Secrets (set via `wrangler secret put`):
 #   ADMIN_API_KEY
+#   DASHBOARD_PASSWORD  (optional; if unset, the / dashboard returns 404)
 
 [[kv_namespaces]]
 binding = "KV"
