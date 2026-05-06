@@ -24,6 +24,11 @@ export const DASHBOARD_HTML = `<!doctype html>
   button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--b); }
   button:disabled { opacity: .5; cursor: not-allowed; }
   pre { background: color-mix(in srgb, var(--bg) 80%, var(--fg) 20%); border: 1px solid var(--b); border-radius: 8px; padding: 12px; overflow: auto; max-height: 480px; white-space: pre-wrap; word-break: break-word; margin: 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.short { height: 180px; }
+  .chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-style: italic; pointer-events: none; text-align: center; padding: 0 12px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
   .stat { padding: 8px 12px; border: 1px solid var(--b); border-radius: 8px; background: var(--bg); }
   .stat .k { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
@@ -55,6 +60,42 @@ export const DASHBOARD_HTML = `<!doctype html>
   </section>
 
   <section class="card">
+    <h2>Avg price trend</h2>
+    <div class="row">
+      <label>Window
+        <select id="trendLimit">
+          <option value="48">last 48 snapshots</option>
+          <option value="168">last 168</option>
+          <option value="500" selected>all (up to 500)</option>
+        </select>
+      </label>
+      <button class="secondary" id="trendReload">Reload</button>
+    </div>
+    <div class="chart-wrap" style="margin-top:12px"><canvas id="trendChart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Avg / min / max per fuel (now)</h2>
+    <div class="chart-wrap"><canvas id="summaryChart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Top 10 cheapest stations</h2>
+    <div class="row" style="margin-bottom:8px">
+      <label class="grow">Fuel
+        <select id="cheapFuel" autocomplete="off"></select>
+      </label>
+    </div>
+    <div class="chart-wrap"><canvas id="cheapestChart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Snapshot cadence</h2>
+    <div class="sub" style="margin:0 0 8px">Minutes between consecutive snapshots. Hourly cron should be ~60. Spikes mean a missed run.</div>
+    <div class="chart-wrap short"><canvas id="cadenceChart"></canvas></div>
+  </section>
+
+  <section class="card">
     <h2>Query</h2>
     <div class="row">
       <label class="grow">Endpoint
@@ -73,6 +114,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 </main>
 <div id="toast" class="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 const ENDPOINTS = [
   { name: 'GET /stations',                 path: '/api/v1/stations',                 params: ['fuelType','district','brand'] },
@@ -209,6 +251,197 @@ $('copyCurl').addEventListener('click', async () => {
 
 renderParams();
 loadStatus();
+
+// ---------- Charts ----------
+const PALETTE = ['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'];
+const charts = {};
+
+function destroyChart(key) { if (charts[key]) { charts[key].destroy(); delete charts[key]; } }
+
+function chartMsg(wrap, msg) {
+  let el = wrap.querySelector('.chart-msg');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'chart-msg';
+    wrap.appendChild(el);
+  }
+  if (msg) { el.textContent = msg; el.style.display = ''; }
+  else el.style.display = 'none';
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function gridColor() {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  return dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)';
+}
+
+function tickColor() {
+  return getComputedStyle(document.body).getPropertyValue('--muted').trim() || '#888';
+}
+
+function commonAxes(opts = {}) {
+  const c = gridColor(); const t = tickColor();
+  return {
+    x: { grid: { color: c }, ticks: { color: t, autoSkip: true, maxRotation: 0, ...opts.xTicks } },
+    y: { grid: { color: c }, ticks: { color: t, ...opts.yTicks }, beginAtZero: !!opts.beginAtZero },
+  };
+}
+
+async function loadTrend() {
+  const limit = $('trendLimit').value;
+  const wrap = $('trendChart').parentElement;
+  destroyChart('trend');
+  chartMsg(wrap, 'Loading…');
+  try {
+    const r = await fetch(\`/api/v1/history/average?limit=\${limit}\`);
+    if (!r.ok) { chartMsg(wrap, 'HTTP ' + r.status + ' from /history/average'); return; }
+    const json = await r.json();
+    const rows = (json.history ?? []).slice().sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+    if (rows.length === 0) { chartMsg(wrap, 'No history yet — click Resync to capture a snapshot.'); return; }
+    const fuels = [...new Set(rows.map(r => r.fuel_type))];
+    const labels = [...new Set(rows.map(r => r.recorded_at))].sort();
+    const labelIdx = new Map(labels.map((l, i) => [l, i]));
+    const singlePoint = labels.length === 1;
+    const datasets = fuels.map((ft, i) => {
+      const data = new Array(labels.length).fill(null);
+      for (const row of rows) if (row.fuel_type === ft) data[labelIdx.get(row.recorded_at)] = row.avg_price;
+      return { label: ft, data, borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length], tension: .25, spanGaps: true, pointRadius: singlePoint ? 4 : 2, borderWidth: 2 };
+    });
+    chartMsg(wrap, null);
+    charts.trend = new Chart($('trendChart'), {
+      type: 'line',
+      data: { labels: labels.map(fmtTime), datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        plugins: { legend: { labels: { color: tickColor() } }, tooltip: { callbacks: { title: (it) => labels[it[0].dataIndex] } } },
+        scales: commonAxes({ xTicks: { maxTicksLimit: 8 } }),
+      },
+    });
+  } catch (e) { chartMsg(wrap, 'Error: ' + String(e)); }
+}
+
+async function loadSummary() {
+  const wrap = $('summaryChart').parentElement;
+  destroyChart('summary');
+  chartMsg(wrap, 'Loading…');
+  try {
+    const r = await fetch('/api/v1/prices/summary');
+    if (!r.ok) { chartMsg(wrap, 'HTTP ' + r.status + ' from /prices/summary'); return; }
+    const json = await r.json();
+    const items = json.byFuelType ?? [];
+    if (items.length === 0) { chartMsg(wrap, 'No data.'); return; }
+    chartMsg(wrap, null);
+    charts.summary = new Chart($('summaryChart'), {
+      type: 'bar',
+      data: {
+        labels: items.map(i => i.fuelType),
+        datasets: [
+          { label: 'min', data: items.map(i => i.min), backgroundColor: PALETTE[2] },
+          { label: 'avg', data: items.map(i => i.avg), backgroundColor: PALETTE[0] },
+          { label: 'max', data: items.map(i => i.max), backgroundColor: PALETTE[1] },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: tickColor() } } },
+        scales: commonAxes({ xTicks: { autoSkip: false } }),
+      },
+    });
+  } catch (e) { chartMsg(wrap, 'Error: ' + String(e)); }
+}
+
+async function loadCheapest() {
+  const fuel = $('cheapFuel').value;
+  const wrap = $('cheapestChart').parentElement;
+  destroyChart('cheapest');
+  if (!fuel) { chartMsg(wrap, 'Pick a fuel.'); return; }
+  chartMsg(wrap, 'Loading…');
+  try {
+    const r = await fetch(\`/api/v1/prices/cheapest?fuelType=\${encodeURIComponent(fuel)}&limit=10\`);
+    if (!r.ok) { chartMsg(wrap, 'HTTP ' + r.status + ' from /prices/cheapest'); return; }
+    const json = await r.json();
+    const stations = json.stations ?? [];
+    if (stations.length === 0) { chartMsg(wrap, 'No data.'); return; }
+    chartMsg(wrap, null);
+    charts.cheapest = new Chart($('cheapestChart'), {
+      type: 'bar',
+      data: {
+        labels: stations.map(s => \`\${s.brand} — \${s.name}\`),
+        datasets: [{ label: fuel, data: stations.map(s => s.price), backgroundColor: PALETTE[0] }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: commonAxes({ yTicks: { autoSkip: false, font: { size: 11 } } }),
+      },
+    });
+  } catch (e) { chartMsg(wrap, 'Error: ' + String(e)); }
+}
+
+async function loadCadence() {
+  const wrap = $('cadenceChart').parentElement;
+  destroyChart('cadence');
+  chartMsg(wrap, 'Loading…');
+  try {
+    const r = await fetch('/api/v1/history/snapshots?limit=200');
+    if (!r.ok) { chartMsg(wrap, 'HTTP ' + r.status + ' from /history/snapshots'); return; }
+    const json = await r.json();
+    const snaps = (json.snapshots ?? []).slice().sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+    if (snaps.length < 2) { chartMsg(wrap, 'Need at least 2 snapshots — current: ' + snaps.length + '.'); return; }
+    chartMsg(wrap, null);
+    const labels = []; const data = []; const colors = [];
+    for (let i = 1; i < snaps.length; i++) {
+      const gap = (new Date(snaps[i].recorded_at) - new Date(snaps[i - 1].recorded_at)) / 60000;
+      labels.push(fmtTime(snaps[i].recorded_at));
+      data.push(Math.round(gap * 10) / 10);
+      colors.push(gap > 90 ? PALETTE[1] : gap < 30 ? PALETTE[3] : PALETTE[0]);
+    }
+    charts.cadence = new Chart($('cadenceChart'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'gap (min)', data, backgroundColor: colors }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: commonAxes({ beginAtZero: true, xTicks: { maxTicksLimit: 10 } }),
+      },
+    });
+  } catch (e) { chartMsg(wrap, 'Error: ' + String(e)); }
+}
+
+async function loadFuelsAndCharts() {
+  try {
+    const r = await fetch('/api/v1/meta/fuel-types');
+    const { fuelTypes = [] } = await r.json();
+    const sel = $('cheapFuel');
+    sel.innerHTML = '';
+    const isPreferred = (ft) => /unleaded\s*95|\b95\b/i.test(ft);
+    const preferred = fuelTypes.find(isPreferred);
+    for (const ft of fuelTypes) {
+      const o = document.createElement('option');
+      o.value = ft;
+      o.textContent = ft;
+      if (preferred ? ft === preferred : false) o.selected = true;
+      sel.appendChild(o);
+    }
+  } catch {}
+  loadSummary();
+  loadCheapest();
+  loadTrend();
+  loadCadence();
+}
+
+$('cheapFuel').addEventListener('change', loadCheapest);
+$('trendReload').addEventListener('click', loadTrend);
+$('trendLimit').addEventListener('change', loadTrend);
+
+if (window.Chart) loadFuelsAndCharts();
+else window.addEventListener('load', loadFuelsAndCharts);
 </script>
 </body>
 </html>`;

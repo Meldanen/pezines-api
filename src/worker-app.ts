@@ -26,6 +26,7 @@ export function buildWorkerApp() {
         headers: { 'WWW-Authenticate': 'Basic realm="pezines"' },
       });
     }
+    c.header('Cache-Control', 'no-store');
     return c.html(DASHBOARD_HTML);
   });
 
