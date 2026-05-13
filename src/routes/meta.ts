@@ -1,26 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { getCache } from '../services/cache.service.js';
+import { metaDistricts, metaFuelTypes } from '../handlers/meta.js';
 
 export async function metaRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/meta/fuel-types
-  app.get('/api/v1/meta/fuel-types', {
-    handler: async (_request, reply) => {
-      const cache = getCache();
-      if (!cache) return reply.status(503).send({ error: 'Data not available yet' });
-
-      reply.header('Cache-Control', 'public, max-age=3600');
-      return { fuelTypes: cache.fuelTypes };
-    },
+  app.get('/api/v1/meta/fuel-types', async (_request, reply) => {
+    const r = metaFuelTypes(getCache());
+    return reply.status(r.status).send(r.body);
   });
 
   // GET /api/v1/meta/districts
-  app.get('/api/v1/meta/districts', {
-    handler: async (_request, reply) => {
-      const cache = getCache();
-      if (!cache) return reply.status(503).send({ error: 'Data not available yet' });
-
-      reply.header('Cache-Control', 'public, max-age=3600');
-      return { districts: cache.districts };
-    },
+  app.get('/api/v1/meta/districts', async (_request, reply) => {
+    const r = metaDistricts(getCache());
+    return reply.status(r.status).send(r.body);
   });
 }

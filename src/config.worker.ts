@@ -5,4 +5,5 @@ export interface Env {
   ADMIN_API_KEY: string;
   DASHBOARD_PASSWORD: string;
   RATE_LIMITER: RateLimit;
+  RATE_LIMITER_ADMIN: RateLimit;
 }

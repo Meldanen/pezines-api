@@ -10,7 +10,7 @@ const CACHE_FILE = path.resolve('data', 'cache.json');
 
 let cache: CacheData | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let refreshing = false;
+let inflightRefresh: Promise<CacheData> | null = null;
 
 function extractMeta(stations: Station[]): { fuelTypes: string[]; districts: string[] } {
   const fuelTypes = new Set<string>();
@@ -45,14 +45,7 @@ async function loadFromFile(): Promise<CacheData | null> {
   }
 }
 
-export async function refreshCache(): Promise<CacheData> {
-  if (refreshing) {
-    // If already refreshing, wait and return current cache
-    if (cache) return cache;
-    throw new Error('Cache refresh already in progress and no stale data available');
-  }
-
-  refreshing = true;
+async function doRefresh(): Promise<CacheData> {
   try {
     const stations = await scrapeAll({
       getSession,
@@ -75,9 +68,16 @@ export async function refreshCache(): Promise<CacheData> {
       return cache;
     }
     throw err;
-  } finally {
-    refreshing = false;
   }
+}
+
+export async function refreshCache(): Promise<CacheData> {
+  // Coalesce concurrent callers onto a single in-flight scrape.
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = doRefresh().finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
 }
 
 export async function initCache(): Promise<void> {

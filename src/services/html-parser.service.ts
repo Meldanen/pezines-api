@@ -5,6 +5,7 @@ import type { RawStation } from '../models/types.js';
 export function parseStationsHtml(html: string): RawStation[] {
   const $ = cheerio.load(html);
   const stations: RawStation[] = [];
+  let firstError: string | undefined;
 
   $('#petroleumPriceDetailsFootable tbody tr').each(function () {
     try {
@@ -20,9 +21,8 @@ export function parseStationsHtml(html: string): RawStation[] {
         .join(', ');
 
       const href = addressLink.attr('href') ?? '';
-      const coordsStr = decodeURI(
-        href.split('coordinates=')[1]?.trim().replace('%2C', ', ') ?? ''
-      );
+      const rawCoords = href.split('coordinates=')[1]?.trim() ?? '';
+      const coordsStr = rawCoords ? decodeURIComponent(rawCoords).replace(',', ', ') : '';
 
       if (!coordsStr) return; // skip if no coordinates
 
@@ -47,8 +47,13 @@ export function parseStationsHtml(html: string): RawStation[] {
         },
         price,
       });
-    } catch {
-      // Skip malformed rows
+    } catch (err) {
+      // Log only the first failure per scrape to surface DOM regressions
+      // without flooding logs if the whole table breaks.
+      if (!firstError) {
+        firstError = (err as Error).message;
+        console.warn('[parser] skipped malformed row:', firstError);
+      }
     }
   });
 

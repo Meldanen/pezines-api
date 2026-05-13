@@ -8,13 +8,14 @@
     "dev:worker": "wrangler dev",
     "build": "tsup src/server.ts --format esm --dts",
     "start": "node dist/server.js",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "tsx scripts/smoke.ts && tsx scripts/smoke-routes.ts && tsx scripts/smoke-scraper.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.2",
     "@fastify/cors": "^11.0.0",
     "@fastify/rate-limit": "^10.2.0",
-    "axios": "^1.7.9",
     "cheerio": "^1.0.0",
     "dotenv": "^17.4.2",
     "envalid": "^8.0.0",

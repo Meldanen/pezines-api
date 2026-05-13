@@ -27,6 +27,10 @@ export function buildWorkerApp() {
       });
     }
     c.header('Cache-Control', 'no-store');
+    // Defense against clickjacking the authenticated /admin/refresh button.
+    c.header('X-Frame-Options', 'DENY');
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'no-referrer');
     return c.html(DASHBOARD_HTML);
   });
 
@@ -36,12 +40,16 @@ export function buildWorkerApp() {
     c.header('Cache-Control', 'no-store');
   });
 
-  // Per-IP rate limit. Skips admin (auth-gated) and health.
+  // Per-IP rate limit.
+  //  - /api/v1/admin/*  → tight bucket (5/min) for brute-force protection on ADMIN_API_KEY
+  //  - /api/v1/health   → unrestricted (used by uptime checks)
+  //  - everything else  → 60/min
   app.use('/api/v1/*', async (c, next) => {
     const path = c.req.path;
-    if (path.startsWith('/api/v1/admin') || path === '/api/v1/health') return next();
+    if (path === '/api/v1/health') return next();
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-    const { success } = await c.env.RATE_LIMITER.limit({ key: ip });
+    const limiter = path.startsWith('/api/v1/admin') ? c.env.RATE_LIMITER_ADMIN : c.env.RATE_LIMITER;
+    const { success } = await limiter.limit({ key: ip });
     if (!success) return c.json({ error: 'Too Many Requests' }, 429);
     return next();
   });
@@ -59,10 +67,10 @@ export function buildWorkerApp() {
     c.json({ error: 'Not Found', message: 'The requested resource does not exist', statusCode: 404 }, 404)
   );
 
-  // Error handler
+  // Error handler — log full error server-side, return generic message to client.
   app.onError((err, c) => {
-    console.error(err);
-    return c.json({ error: err.name ?? 'Error', message: err.message, statusCode: 500 }, 500);
+    console.error('[onError]', err);
+    return c.json({ error: 'Internal Server Error', statusCode: 500 }, 500);
   });
 
   return app;

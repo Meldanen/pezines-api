@@ -13,17 +13,24 @@ import { DASHBOARD_HTML } from './ui/dashboard.js';
 import { checkBasicAuth } from './utils/auth.js';
 import { config } from './config.js';
 
-export async function buildApp() {
+export interface BuildAppOptions {
+  /** Override Fastify's logger. Pass `false` in tests to silence request logs. */
+  logger?: boolean;
+}
+
+export async function buildApp(opts: BuildAppOptions = {}) {
   const isProd = process.env.NODE_ENV === 'production';
   const app = Fastify({
-    logger: isProd
-      ? true
-      : {
-          transport: {
-            target: 'pino-pretty',
-            options: { translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' },
+    logger: opts.logger !== undefined
+      ? opts.logger
+      : isProd
+        ? true
+        : {
+            transport: {
+              target: 'pino-pretty',
+              options: { translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' },
+            },
           },
-        },
   });
 
   // Plugins
@@ -34,6 +41,12 @@ export async function buildApp() {
     timeWindow: '1 minute',
   });
   await app.register(errorHandlerPlugin);
+
+  // Mirror the Workers behaviour: clients manage caching deliberately, no shared/edge caching.
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (request.url.startsWith('/api/v1/')) reply.header('Cache-Control', 'no-store');
+    return payload;
+  });
 
   // Routes
   await app.register(stationRoutes);
@@ -53,7 +66,13 @@ export async function buildApp() {
         .header('WWW-Authenticate', 'Basic realm="pezines"')
         .send('Authentication required');
     }
-    reply.type('text/html; charset=utf-8').send(DASHBOARD_HTML);
+    // Defense against clickjacking the authenticated /admin/refresh button.
+    reply
+      .header('X-Frame-Options', 'DENY')
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Referrer-Policy', 'no-referrer')
+      .type('text/html; charset=utf-8')
+      .send(DASHBOARD_HTML);
   });
 
   return app;

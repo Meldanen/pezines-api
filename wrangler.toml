@@ -30,3 +30,12 @@ namespace_id = "1001"
   [ratelimits.simple]
   limit = 60
   period = 60
+
+# Tight per-IP bucket for /api/v1/admin/* — brute-force protection on ADMIN_API_KEY.
+[[ratelimits]]
+name = "RATE_LIMITER_ADMIN"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
