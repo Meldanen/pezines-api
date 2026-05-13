@@ -5,8 +5,8 @@ export const DASHBOARD_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>pezines admin</title>
 <style>
-  :root { color-scheme: light dark; --b:#d0d4da; --bg:#fafbfc; --fg:#1a1a1a; --muted:#6b7280; --accent:#2563eb; --bad:#b91c1c; --good:#15803d; }
-  @media (prefers-color-scheme: dark) { :root { --b:#2a2f36; --bg:#0f1115; --fg:#e6e6e6; --muted:#9aa3ad; --accent:#60a5fa; --bad:#f87171; --good:#4ade80; } }
+  :root { color-scheme: light dark; --b:#d0d4da; --bg:#fafbfc; --fg:#1a1a1a; --muted:#6b7280; --accent:#2563eb; --bad:#b91c1c; --good:#15803d; --warn:#b45309; }
+  @media (prefers-color-scheme: dark) { :root { --b:#2a2f36; --bg:#0f1115; --fg:#e6e6e6; --muted:#9aa3ad; --accent:#60a5fa; --bad:#f87171; --good:#4ade80; --warn:#fbbf24; } }
   * { box-sizing: border-box; }
   body { font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
   main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
@@ -37,8 +37,10 @@ export const DASHBOARD_HTML = `<!doctype html>
   .pill.ok { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
   .pill.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
   .url { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); word-break: break-all; }
-  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  .toast.warn { background: var(--warn); color: #fff; }
+  .toast.bad  { background: var(--bad);  color: #fff; }
 </style>
 </head>
 <body>
@@ -132,11 +134,13 @@ const ENDPOINTS = [
 
 const $ = (id) => document.getElementById(id);
 
-function toast(msg) {
+function toast(msg, kind) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.remove('warn', 'bad');
+  if (kind === 'warn' || kind === 'bad') t.classList.add(kind);
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 1600);
+  setTimeout(() => t.classList.remove('show'), kind ? 2600 : 1600);
 }
 
 function renderStats(health) {
@@ -172,10 +176,17 @@ $('resync').addEventListener('click', async () => {
     const r = await fetch('/api/v1/admin/refresh', { method: 'POST' });
     const json = await r.json();
     out.textContent = JSON.stringify(json, null, 2);
-    if (r.ok) { toast('Resynced'); loadStatus(); } else { toast('Resync failed'); }
+    if (r.ok) {
+      if (json.fresh === false) {
+        toast('Scrape failed — kept stale cache', 'warn');
+      } else {
+        toast('Resynced');
+      }
+      loadStatus();
+    } else { toast('Resync failed', 'bad'); }
   } catch (e) {
     out.textContent = String(e);
-    toast('Network error');
+    toast('Network error', 'bad');
   } finally {
     btn.disabled = false; btn.textContent = 'Resync now';
   }

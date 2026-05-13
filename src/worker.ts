@@ -11,7 +11,11 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       refreshCacheKV(env)
-        .then(async (data) => {
+        .then(async ({ data, fresh }) => {
+          if (!fresh) {
+            console.log(`[cron] Scrape failed; kept stale cache (${data.stations.length} stations)`);
+            return;
+          }
           console.log(`[cron] Refreshed cache: ${data.stations.length} stations`);
           await savePriceSnapshot(env.DB, data);
           console.log('[cron] Saved price snapshot to D1');

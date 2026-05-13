@@ -9,7 +9,7 @@
     "build": "tsup src/server.ts --format esm --dts",
     "start": "node dist/server.js",
     "deploy": "wrangler deploy",
-    "test": "tsx scripts/smoke.ts && tsx scripts/smoke-routes.ts && tsx scripts/smoke-scraper.ts",
+    "test": "tsx scripts/smoke.ts && tsx scripts/smoke-routes.ts && tsx scripts/smoke-scraper.ts && tsx scripts/smoke-cache.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

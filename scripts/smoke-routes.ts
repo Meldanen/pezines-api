@@ -31,7 +31,8 @@ const fixture: CacheData = {
       prices: [{ fuelType: 'Unleaded 95', price: 1.5 }],
     },
   ],
-  scrapedAt: '2026-05-13T10:00:00Z',
+  // Always fresh relative to "now" so handler `stale` checks return false regardless of test run time.
+  scrapedAt: new Date().toISOString(),
   fuelTypes: ['Unleaded 95'],
   districts: ['Nicosia'],
 };
@@ -120,8 +121,9 @@ const fixture: CacheData = {
 
   const stations = await call('/api/v1/stations');
   assert(stations.status === 200, `Hono /stations: 200 (got ${stations.status})`);
-  const sBody = await stations.json() as { count: number };
+  const sBody = await stations.json() as { count: number; stale: boolean };
   assert(sBody.count === 1, 'Hono /stations: 1 result from KV fixture');
+  assert(sBody.stale === false, `Hono /stations: stale=false on fresh fixture (got ${sBody.stale})`);
   assert(stations.headers.get('cache-control') === 'no-store', 'Hono /stations: no-store');
 
   const stationsFiltered = await call('/api/v1/stations?district=Nicosia');
@@ -141,15 +143,17 @@ const fixture: CacheData = {
 
   const cheapest = await call('/api/v1/prices/cheapest?fuelType=95');
   assert(cheapest.status === 200, `Hono /prices/cheapest: 200 (got ${cheapest.status})`);
-  const cBody = await cheapest.json() as { fuelType: string };
+  const cBody = await cheapest.json() as { fuelType: string; stale: boolean };
   assert(cBody.fuelType === 'Unleaded 95', 'Hono /prices/cheapest: resolves shorthand');
+  assert(cBody.stale === false, `Hono /prices/cheapest: stale=false on fresh fixture (got ${cBody.stale})`);
   const cheapestMissing = await call('/api/v1/prices/cheapest');
   assert(cheapestMissing.status === 400, 'Hono /prices/cheapest: 400 without fuelType');
 
   const summary = await call('/api/v1/prices/summary');
   assert(summary.status === 200, 'Hono /prices/summary: 200');
-  const sumBody = await summary.json() as { byFuelType: unknown[] };
+  const sumBody = await summary.json() as { byFuelType: unknown[]; stale: boolean };
   assert(Array.isArray(sumBody.byFuelType), 'Hono /prices/summary: byFuelType array');
+  assert(sumBody.stale === false, `Hono /prices/summary: stale=false on fresh fixture (got ${sumBody.stale})`);
 
   const fts = await call('/api/v1/meta/fuel-types');
   assert(fts.status === 200 && ((await fts.json()) as { fuelTypes: string[] }).fuelTypes.includes('Unleaded 95'), 'Hono /meta/fuel-types');

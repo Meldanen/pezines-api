@@ -19,16 +19,19 @@ admin.post('/api/v1/admin/refresh', async (c) => {
   }
 
   try {
-    const data = await refreshCacheKV(c.env);
+    const { data, fresh } = await refreshCacheKV(c.env);
     let snapshotSaved = false;
-    try {
-      await savePriceSnapshot(c.env.DB, data);
-      snapshotSaved = true;
-    } catch (err) {
-      console.error('[admin/refresh] D1 snapshot failed:', err);
+    if (fresh) {
+      try {
+        await savePriceSnapshot(c.env.DB, data);
+        snapshotSaved = true;
+      } catch (err) {
+        console.error('[admin/refresh] D1 snapshot failed:', err);
+      }
     }
     return c.json({
-      message: 'Cache refreshed successfully',
+      message: fresh ? 'Cache refreshed successfully' : 'Scrape failed; kept stale cache',
+      fresh,
       stationCount: data.stations.length,
       scrapedAt: data.scrapedAt,
       snapshotSaved,

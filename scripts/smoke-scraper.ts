@@ -193,6 +193,27 @@ try {
     assert(stations.length === 1, 'partial failure: still produces stations');
     assert(stations[0]?.prices.length === 4, `4 fuel types collected after one failure (got ${stations[0]?.prices.length})`);
   }
+
+  // ───── 7. scrapeAll: throws when EVERY fuel type fails (don't poison cache with empty)
+  {
+    installFetch(() => new Response('gov is down', { status: 503 }));
+
+    const session = { cookies: 'S=1', verificationToken: 'T', obtainedAt: Date.now() };
+    let threw = false;
+    let msg = '';
+    try {
+      await scrapeAll({
+        getSession: async () => session,
+        refreshSession: async () => session,
+        govUrl: 'http://gov.test/page',
+      });
+    } catch (err) {
+      threw = true;
+      msg = (err as Error).message;
+    }
+    assert(threw, 'all-fail: scrapeAll throws instead of returning []');
+    assert(msg.includes('all fuel types'), `all-fail: error message mentions all-fuel-types failure (got "${msg}")`);
+  }
 } finally {
   globalThis.fetch = originalFetch;
 }

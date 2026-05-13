@@ -8,9 +8,14 @@ import type { CacheData, Station } from '../models/types.js';
 
 const CACHE_FILE = path.resolve('data', 'cache.json');
 
+export interface RefreshResult {
+  data: CacheData;
+  fresh: boolean;
+}
+
 let cache: CacheData | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let inflightRefresh: Promise<CacheData> | null = null;
+let inflightRefresh: Promise<RefreshResult> | null = null;
 
 function extractMeta(stations: Station[]): { fuelTypes: string[]; districts: string[] } {
   const fuelTypes = new Set<string>();
@@ -45,7 +50,7 @@ async function loadFromFile(): Promise<CacheData | null> {
   }
 }
 
-async function doRefresh(): Promise<CacheData> {
+async function doRefresh(): Promise<RefreshResult> {
   try {
     const stations = await scrapeAll({
       getSession,
@@ -60,18 +65,18 @@ async function doRefresh(): Promise<CacheData> {
       districts: meta.districts,
     };
     await persistToFile(cache);
-    return cache;
+    return { data: cache, fresh: true };
   } catch (err) {
     // Stale-while-revalidate: keep old cache if refresh fails
     if (cache) {
       console.error('[cache] Refresh failed, serving stale data:', (err as Error).message);
-      return cache;
+      return { data: cache, fresh: false };
     }
     throw err;
   }
 }
 
-export async function refreshCache(): Promise<CacheData> {
+export async function refreshCache(): Promise<RefreshResult> {
   // Coalesce concurrent callers onto a single in-flight scrape.
   if (inflightRefresh) return inflightRefresh;
   inflightRefresh = doRefresh().finally(() => {

@@ -28,3 +28,7 @@ export const DEFAULT_NEARBY_RADIUS_KM = 5;
 export const MAX_NEARBY_RADIUS_KM = 50;
 export const DEFAULT_CHEAPEST_LIMIT = 10;
 export const MAX_CHEAPEST_LIMIT = 50;
+
+// How old the cached data has to be before we tell the user it's stale.
+// Independent of cron cadence — this is a UX threshold, not a refresh schedule.
+export const USER_FACING_STALE_MS = 4 * 60 * 60 * 1000; // 4 hours

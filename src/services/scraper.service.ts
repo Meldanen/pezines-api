@@ -99,6 +99,7 @@ async function mergeResults(results: ScrapeResult[]): Promise<Station[]> {
 export async function scrapeAll(opts: ScrapeOptions): Promise<Station[]> {
   console.log('[scraper] Starting full scrape of all fuel types...');
   const results: ScrapeResult[] = [];
+  const errors: string[] = [];
 
   // Sequential by design: the gov site shares one CSRF session across requests
   // and rejects concurrent POSTs from the same token. Don't parallelise.
@@ -108,11 +109,22 @@ export async function scrapeAll(opts: ScrapeOptions): Promise<Station[]> {
       results.push(result);
       console.log(`[scraper] Fuel type ${FUEL_TYPE_MAP[id]}: ${result.stations.length} stations`);
     } catch (err) {
-      console.error(`[scraper] Failed to scrape fuel type ${id}:`, (err as Error).message);
+      const msg = (err as Error).message;
+      errors.push(`${FUEL_TYPE_MAP[id] ?? id}: ${msg}`);
+      console.error(`[scraper] Failed to scrape fuel type ${id}:`, msg);
     }
+  }
+
+  if (results.length === 0) {
+    throw new Error(`Scrape failed for all fuel types: ${errors.join('; ')}`);
   }
 
   const stations = await mergeResults(results);
   console.log(`[scraper] Merged into ${stations.length} unique stations`);
+
+  if (stations.length === 0) {
+    throw new Error('Scrape returned zero stations across all fuel types');
+  }
+
   return stations;
 }

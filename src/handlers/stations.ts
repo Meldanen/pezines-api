@@ -1,5 +1,9 @@
 import { findNearby } from '../services/geo.service.js';
-import { DEFAULT_NEARBY_RADIUS_KM, MAX_NEARBY_RADIUS_KM } from '../utils/constants.js';
+import {
+  DEFAULT_NEARBY_RADIUS_KM,
+  MAX_NEARBY_RADIUS_KM,
+  USER_FACING_STALE_MS,
+} from '../utils/constants.js';
 import type { CacheData, Station, StationWithDistance } from '../models/types.js';
 import type { ErrorBody, HandlerResponse } from './types.js';
 
@@ -12,6 +16,10 @@ function includesCI(haystack: string, needle: string): boolean {
   return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
+function isStale(scrapedAt: string): boolean {
+  return Date.now() - new Date(scrapedAt).getTime() > USER_FACING_STALE_MS;
+}
+
 export interface ListStationsParams {
   fuelType?: string;
   district?: string;
@@ -21,6 +29,7 @@ export interface ListStationsParams {
 export interface ListStationsBody {
   count: number;
   scrapedAt: string;
+  stale: boolean;
   stations: Station[];
 }
 
@@ -43,7 +52,12 @@ export function listStations(
 
   return {
     status: 200,
-    body: { count: stations.length, scrapedAt: cache.scrapedAt, stations },
+    body: {
+      count: stations.length,
+      scrapedAt: cache.scrapedAt,
+      stale: isStale(cache.scrapedAt),
+      stations,
+    },
   };
 }
 
@@ -60,6 +74,7 @@ export interface NearbyStationsBody {
   center: { lat: number; lng: number };
   radiusKm: number;
   scrapedAt: string;
+  stale: boolean;
   stations: StationWithDistance[];
 }
 
@@ -96,6 +111,7 @@ export function nearbyStations(
       center: { lat, lng },
       radiusKm: radius,
       scrapedAt: cache.scrapedAt,
+      stale: isStale(cache.scrapedAt),
       stations: results,
     },
   };

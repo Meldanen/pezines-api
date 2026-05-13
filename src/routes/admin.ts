@@ -19,9 +19,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        const data = await refreshCache();
+        const { data, fresh } = await refreshCache();
         return {
-          message: 'Cache refreshed successfully',
+          message: fresh ? 'Cache refreshed successfully' : 'Scrape failed; kept stale cache',
+          fresh,
           stationCount: data.stations.length,
           scrapedAt: data.scrapedAt,
         };

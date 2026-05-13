@@ -1,4 +1,8 @@
-import { DEFAULT_CHEAPEST_LIMIT, MAX_CHEAPEST_LIMIT } from '../utils/constants.js';
+import {
+  DEFAULT_CHEAPEST_LIMIT,
+  MAX_CHEAPEST_LIMIT,
+  USER_FACING_STALE_MS,
+} from '../utils/constants.js';
 import type {
   CacheData,
   DistrictSummaryItem,
@@ -20,6 +24,10 @@ function avg(values: number[]): number {
   return round3(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
+function isStale(scrapedAt: string): boolean {
+  return Date.now() - new Date(scrapedAt).getTime() > USER_FACING_STALE_MS;
+}
+
 export interface CheapestParams {
   fuelType?: string;
   limit?: number;
@@ -30,6 +38,7 @@ export interface CheapestBody {
   fuelType: string;
   count: number;
   scrapedAt: string;
+  stale: boolean;
   stations: (Station & { price: number })[];
 }
 
@@ -68,6 +77,7 @@ export function cheapestPrices(
       fuelType: resolvedFuelType,
       count: sorted.length,
       scrapedAt: cache.scrapedAt,
+      stale: isStale(cache.scrapedAt),
       stations: sorted,
     },
   };
@@ -75,6 +85,7 @@ export function cheapestPrices(
 
 export interface SummaryBody {
   scrapedAt: string;
+  stale: boolean;
   byFuelType: PriceSummaryItem[];
   byDistrict: DistrictSummaryItem[];
 }
@@ -116,5 +127,8 @@ export function pricesSummary(cache: CacheData | null): HandlerResponse<SummaryB
     }
   }
 
-  return { status: 200, body: { scrapedAt: cache.scrapedAt, byFuelType, byDistrict } };
+  return {
+    status: 200,
+    body: { scrapedAt: cache.scrapedAt, stale: isStale(cache.scrapedAt), byFuelType, byDistrict },
+  };
 }
